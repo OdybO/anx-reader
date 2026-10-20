@@ -1,0 +1,68 @@
+name: Build Android (ctx-lookup)
+
+# 只编译 64 位安卓 APK（Y700 等现在的安卓设备都是 64 位 ARM），用自己的签名密钥签名。
+# 在 GitHub 的 Actions 页点 Run workflow 触发，或者用 gh workflow run。
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Read Flutter version
+        id: flutter
+        run: |
+          # 和上游一样，版本写在 setup.yaml 里
+          V=$(grep -m1 -oE 'FLUTTER_VERSION=[0-9.]+' .github/workflows/setup.yaml | cut -d= -f2)
+          echo "version=${V}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ steps.flutter.outputs.version }}
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Get Dependencies
+        run: |
+          flutter --version
+          flutter pub get
+
+      - name: Setup Android signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/keystore.jks
+          {
+            echo "storePassword=$KEYSTORE_PASSWORD"
+            echo "keyPassword=$KEY_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "storeFile=keystore.jks"
+          } > android/key.properties
+
+      - name: Build APK (arm64)
+        run: |
+          flutter gen-l10n
+          dart run build_runner build --delete-conflicting-outputs
+          flutter build apk --release --target-platform android-arm64
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: anx-reader-ctx-arm64
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
