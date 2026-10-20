@@ -5,6 +5,7 @@ import './view.js'
 import { FootnoteHandler } from './footnotes.js'
 import { Overlayer } from './overlayer.js'
 import { collapse, compare, fromRange, toRange } from './epubcfi.js'
+import { buildContextText } from './context-paragraph.js'
 const { configure, ZipReader, BlobReader, TextWriter, BlobWriter } =
   await import('./vendor/zip.js')
 const { EPUB } = await import('./epub.js')
@@ -86,7 +87,22 @@ const _sliceWithWindow = (text, start, end) => {
   return text.slice(safeStart, safeEnd);
 };
 
+// Whole paragraph + previous and next paragraph (see context-paragraph.js); falls back to the
+// short text-node window below when that cannot be built.
+const PARAGRAPH_CONTEXT_CHARS = 2000;
+
 const buildRangeContextText = (range) => {
+  if (!range) return '';
+  try {
+    const text = buildContextText(range, { maxChars: PARAGRAPH_CONTEXT_CHARS });
+    if (text) return text;
+  } catch (e) {
+    console.warn('paragraph context failed, using the short context', e);
+  }
+  return buildShortRangeContextText(range);
+};
+
+const buildShortRangeContextText = (range) => {
   if (!range) return '';
 
   const selectionText = range.toString().trim();
